@@ -42,36 +42,33 @@ const memoizedNewApiToken: MemoizedNewApiTokenMap = {};
 // for the result of the call.
 
 interface PostMessageEvent {
-  data: RenderTemplateData;
-  source: PostMessageEventSource;
+  data: {
+    renderTemplate: RenderTemplateCall;
+  },
+  source: Window;
   origin: string;
 }
-interface PostMessageEventSource {
-  postMessage: (object, string) => void;
-}
-interface RenderTemplateData {
-  renderTemplate: RenderTemplateRpc;
-}
-interface RenderTemplateRpc {
+interface RenderTemplateCall {
   rpcId: string;
   template: string;
   petname: string;
-  roleAssignment: object;
+  roleAssignment: {
+    allAccess: null;
+  };
   forSharing: boolean;
   clipboardButton: string;
+  unauthenticated: object;
+  clientapp: string;
+}
+interface SenderGrain {
+  grainId: () => string;
+  title: () => string;
 }
 
-function renderTemplateRpc (event: PostMessageEvent, senderGrain): void {
-  // Request creation of a single-use template with a privileged API token.
-  // Why?  Apps should not be able to obtain capabilities-as-keys to
-  // themselves directly, because those can be leaked through an arbitrary
-  // bit stream or covert channel.  However, apps often need a way to provide
-  // instructions to users to copy/paste with some privileged token contained
-  // within.  By providing this templating in the platform, we can ensure
-  // that the token is only visible to the shell's origin.
-  const call: RenderTemplateRpc = event.data.renderTemplate;
-  check(call, Object);
-  const rpcId: string = call.rpcId;
+function checkedRenderTemplateRpc (event: unknown, senderGrain: unknown): void {
+  check(event, MessageEvent);
+  const call: unknown = (event as MessageEvent).data.renderTemplate;
+  const rpcId: string = (call as RenderTemplateCall).rpcId;
 
   try {
     check(call, {
@@ -95,6 +92,31 @@ function renderTemplateRpc (event: PostMessageEvent, senderGrain): void {
     event.source.postMessage({ rpcId: rpcId, error: error.toString() }, event.origin);
     return;
   }
+  let checkedEvent: PostMessageEvent = event as PostMessageEvent;
+
+  check(senderGrain, {
+    grainId: Match.Where(function (grainId) {
+      return typeof grainId == "function" && typeof grainId() == "string";
+    }),
+    title: Match.Where(function (title) {
+      return typeof title == "function" && typeof title() == "string";
+    }),
+  });
+  let checkedSenderGrain: SenderGrain = senderGrain;
+
+  return renderTemplateRpc(checkedEvent, checkedSenderGrain);
+}
+
+function renderTemplateRpc (event: PostMessageEvent, senderGrain: SenderGrain): void {
+  // Request creation of a single-use template with a privileged API token.
+  // Why?  Apps should not be able to obtain capabilities-as-keys to
+  // themselves directly, because those can be leaked through an arbitrary
+  // bit stream or covert channel.  However, apps often need a way to provide
+  // instructions to users to copy/paste with some privileged token contained
+  // within.  By providing this templating in the platform, we can ensure
+  // that the token is only visible to the shell's origin.
+  const call = event.data.renderTemplate;
+  const rpcId: string = call.rpcId;
 
   const template = call.template;
   let petname = "connected external app";
@@ -136,7 +158,7 @@ function renderTemplateRpc (event: PostMessageEvent, senderGrain): void {
   ];
 
   const memoizeKey = SHA256(JSON.stringify(params));
-  let memoizeResult: MemoizedNewApiToken = memoizedNewApiToken[memoizeKey];
+  let memoizeResult: MemoizedNewApiToken | undefined = memoizedNewApiToken[memoizeKey];
   if (memoizeResult && (Date.now() - memoizeResult.timestamp > selfDestructDuration / 2)) {
     // Memoized result is too old. Discard.
     memoizeResult = undefined;
@@ -146,11 +168,12 @@ function renderTemplateRpc (event: PostMessageEvent, senderGrain): void {
     memoizedNewApiToken[memoizeKey] = memoizeResult = {
       timestamp: Date.now(),
       promise: new Promise(function (resolve, reject) {
-        const callback = (err, result) => {
+        const callback = (err: unknown, result: unknown) => {
           if (err) {
             reject(err);
           } else {
-            resolve(result);
+            check(result, {token: String});
+            resolve(result as NewApiTokenResult);
           }
         };
 
@@ -159,7 +182,7 @@ function renderTemplateRpc (event: PostMessageEvent, senderGrain): void {
     };
   }
 
-  memoizeResult.promise.then((result) => {
+  memoizeResult.promise.then((result: NewApiTokenResult) => {
     const tokenId = result.token;
     // Generate random key id2.
     const id2 = Random.secret();
@@ -202,6 +225,6 @@ function renderTemplateRpc (event: PostMessageEvent, senderGrain): void {
   }, (error) => {
     event.source.postMessage({ rpcId: rpcId, error: error.toString() }, event.origin);
   });
-};
+}
 
-export { renderTemplateRpc };
+export { checkedRenderTemplateRpc };

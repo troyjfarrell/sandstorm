@@ -37,7 +37,7 @@ import { GrainView } from "/imports/client/grain/grainview.js";
 import { SandstormDb } from "/imports/sandstorm-db/db.js";
 import { globalDb } from "/imports/db-deprecated.js";
 import { SandstormPowerboxRequest } from "/imports/sandstorm-ui-powerbox/powerbox-client.js";
-import { renderTemplateRpc } from "/imports/client/render-template.ts";
+import { checkedRenderTemplateRpc } from "/imports/client/render-template.ts";
 
 // Pseudo-collections.
 TokenInfo = new Mongo.Collection("tokenInfo");
@@ -1528,7 +1528,7 @@ Meteor.startup(function () {
     } else if (event.data.setTitle || event.data.setTitle === "") {
       senderGrain.setFrameTitle(event.data.setTitle);
     } else if (event.data.renderTemplate) {
-      renderTemplateRpc(event, senderGrain);
+      checkedRenderTemplateRpc(event, senderGrain);
     } else if (event.data.powerboxRequest) {
       const powerboxRequest = event.data.powerboxRequest;
       check(powerboxRequest, {
